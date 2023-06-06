@@ -12,7 +12,7 @@ namespace MinecraftServerInfoBot
     {
         static void Main(string[] args)
         {
-            // Abrir fichero latest.log en modo lectura
+            // Declaración de variables de programa
             var logFileName = "latest.log";
             var previousLogFileName = "auxLog.log";
             var previouslyCheckedDataFileName = "alreadyChecked.log";
@@ -25,22 +25,28 @@ namespace MinecraftServerInfoBot
             Dictionary<string, string> currentRegisteredPlayers = new Dictionary<string, string>();
             Dictionary<string, string> previousRegisteredPlayers = new Dictionary<string, string>();
 
-            // Creacion de fichero auxiliar
+            // Creacion de fichero auxiliar para los jugadores
+			// que siguen online y para las líneas de log que ya se han leído
             CreateFile(previouslyCheckedDataFileName);
             previousLogFileWasCreated = CreateFile(previousLogFileName);
 
-            // Obtencion de datos 
-            currentLogFileLines = GetFileContent(logFileName);
+            // Obtención de datos de los ficheros
             previousLogFileLines = GetFileContent(previousLogFileName);
-
             currentLogFileLines = CleanLogData(GetFileContent(previouslyCheckedDataFileName), currentLogFileLines);
+			
+			// Las líneas de log que se procesan en este programa se almacenan
+			// en este fichero para no volverlas a procesar.
             AppendLinesToFile(previouslyCheckedDataFileName, currentLogFileLines);
 
+			// Si no hay novedades en el server return
             if (currentLogFileLines.Count == 0) return;
 
+			// Obtención de los jugadores que estaban online y
+			// los que se acaban de conectar
             previousRegisteredPlayers = FillPlayersDictionary(previousRegisteredPlayers, previousLogFileLines, previousLogFileWasCreated);
             currentRegisteredPlayers = FillPlayersDictionary(currentRegisteredPlayers, currentLogFileLines);
 
+			// Los jugadores que ya estaban online no se tienen en cuenta y se filtran
             foreach (var item in currentRegisteredPlayers)
             {
                 bool hasKey = previousRegisteredPlayers.ContainsKey(item.Key);
@@ -48,25 +54,22 @@ namespace MinecraftServerInfoBot
 
                 unanouncedPlayersList.Add(item.Value);
             }
-
+			
+			// Los nuevos jugadores se almacenan para
+			// tenerlos en cuenta en la próxima ejecución del programa
             AppendLinesToFile(previousLogFileName, unanouncedPlayersList);
-
-            foreach (var item in unanouncedPlayersList)
-            {
-                Console.WriteLine($"[New player joined]: {item}");
-            }
 
             if (unanouncedPlayersList.Count == 0) return;
 
-            // Posting results
-            Console.WriteLine("Sending success to discord...");
+            // Postear resultados a discord
+            Console.WriteLine("Mandando mensaje a discord...");
             string postMessage = CreateNotificationMessage(unanouncedPlayersList);
             var webhook = new DiscordWebhookClient("https://discord.com/api/webhooks/1115580657544986656/jUqw7ch9YyUY5wwR9esQf1r8NQ5GcwTqmVfvJhKYMF44JYeBiF5RnwAm5N15NJK4M1GV");
             Task<ulong> sendMessageTask = webhook.SendMessageAsync(postMessage);
 
             sendMessageTask.Wait();
 
-            Console.WriteLine("Message sent...");
+            Console.WriteLine("Mensaje enviado...");
 
             Console.ReadLine();
         }
