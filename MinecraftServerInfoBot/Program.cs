@@ -13,17 +13,17 @@ namespace MinecraftServerInfoBot
         static void Main(string[] args)
         {
             // Declaración de variables de programa
-            var logFileName = "latest.log";
+            var logFileName = "../Server/logs/latest.log";
             var previousLogFileName = "auxLog.log";
             var previouslyCheckedDataFileName = "alreadyChecked.log";
             var previousLogFileWasCreated = false;
-
+            
             // Inicializacion de estructuras de datos
             List<string> currentLogFileLines = new List<string>();
             List<string> previousLogFileLines = new List<string>();
-            List<string> unanouncedPlayersList = new List<string>();
-            Dictionary<string, string> currentRegisteredPlayers = new Dictionary<string, string>();
-            Dictionary<string, string> previousRegisteredPlayers = new Dictionary<string, string>();
+            Dictionary<string, bool> unanouncedPlayersDict = new Dictionary<string, bool>();
+            Dictionary<string, bool> currentRegisteredPlayers = new Dictionary<string, bool>();
+            Dictionary<string, bool> previousRegisteredPlayers = new Dictionary<string, bool>();
 
             // Creacion de fichero auxiliar para los jugadores
 			// que siguen online y para las líneas de log que ya se han leído
@@ -31,6 +31,7 @@ namespace MinecraftServerInfoBot
             previousLogFileWasCreated = CreateFile(previousLogFileName);
 
             // Obtención de datos de los ficheros
+            currentLogFileLines = GetFileContent(logFileName);
             previousLogFileLines = GetFileContent(previousLogFileName);
             currentLogFileLines = CleanLogData(GetFileContent(previouslyCheckedDataFileName), currentLogFileLines);
 			
@@ -52,26 +53,25 @@ namespace MinecraftServerInfoBot
                 bool hasKey = previousRegisteredPlayers.ContainsKey(item.Key);
                 if (hasKey) continue;
 
-                unanouncedPlayersList.Add(item.Value);
+                unanouncedPlayersDict.Add(item.Key, item.Value);
             }
 			
 			// Los nuevos jugadores se almacenan para
 			// tenerlos en cuenta en la próxima ejecución del programa
-            AppendLinesToFile(previousLogFileName, unanouncedPlayersList);
+            AppendDictionaryLinesToFile(previousLogFileName, unanouncedPlayersDict);
 
-            if (unanouncedPlayersList.Count == 0) return;
+            if (unanouncedPlayersDict.Count == 0) return;
 
             // Postear resultados a discord
             Console.WriteLine("Mandando mensaje a discord...");
-            string postMessage = CreateNotificationMessage(unanouncedPlayersList);
+            string postMessage = CreateNotificationMessage(unanouncedPlayersDict);
             var webhook = new DiscordWebhookClient("https://discord.com/api/webhooks/1115580657544986656/jUqw7ch9YyUY5wwR9esQf1r8NQ5GcwTqmVfvJhKYMF44JYeBiF5RnwAm5N15NJK4M1GV");
             Task<ulong> sendMessageTask = webhook.SendMessageAsync(postMessage);
 
             sendMessageTask.Wait();
 
             Console.WriteLine("Mensaje enviado...");
-
-            Console.ReadLine();
+            Console.WriteLine(postMessage);
         }
 
         public static bool CreateFile(string auxFileName)
@@ -97,6 +97,17 @@ namespace MinecraftServerInfoBot
                 foreach (var item in lines)
                 {
                     w.WriteLine(item);
+                }
+            }
+        }
+
+        public static void AppendDictionaryLinesToFile(string fileName, Dictionary<string, bool> lines)
+        {
+            using (StreamWriter w = File.AppendText(fileName))
+            {
+                foreach (var item in lines)
+                {
+                    w.WriteLine(item.Key);
                 }
             }
         }
@@ -130,7 +141,19 @@ namespace MinecraftServerInfoBot
             return result;
         }
 
-        public static Dictionary<string, string> FillPlayersDictionary(Dictionary<string, string> joinedPlayers,
+        public static string GetLeftPlayerName(string playerJoinedLog)
+        {
+            int pFrom = playerJoinedLog.IndexOf("INFO]:") + "INFO]:".Length;
+            int pTo = playerJoinedLog.LastIndexOf("left");
+
+            var result = playerJoinedLog.Substring(pFrom, pTo - pFrom);
+
+            result = result.Replace(" ", "");
+
+            return result;
+        }
+
+        public static Dictionary<string, bool> FillPlayersDictionary(Dictionary<string, bool> joinedPlayers,
             List<string> loggedPlayers, bool isRawData = true)
         {
             foreach (var item in loggedPlayers)
@@ -140,17 +163,33 @@ namespace MinecraftServerInfoBot
                     string previousJoinedPlayer = GetJoinedPlayerName(item);
                     if (!joinedPlayers.ContainsKey(previousJoinedPlayer))
                     {
-                        joinedPlayers.Add(previousJoinedPlayer, previousJoinedPlayer);
+                        joinedPlayers.Add(previousJoinedPlayer, true);
+                    }
+                    else if (joinedPlayers[previousJoinedPlayer] == false)
+                    {
+                        joinedPlayers[previousJoinedPlayer] = true;
                     }
                 } 
-                else if (!isRawData)
+                else if (item.Contains("left"))
                 {
-                    string previousJoinedPlayer = item;
+                    string previousJoinedPlayer = GetLeftPlayerName(item);
                     if (!joinedPlayers.ContainsKey(previousJoinedPlayer))
                     {
-                        joinedPlayers.Add(previousJoinedPlayer, previousJoinedPlayer);
+                        joinedPlayers.Add(previousJoinedPlayer, false);
+                    } 
+                    else if(joinedPlayers[previousJoinedPlayer] == true)
+                    {
+                        joinedPlayers[previousJoinedPlayer] = false;
                     }
                 }
+                //else if (!isRawData)
+                //{
+                //    string previousJoinedPlayer = item;
+                //    if (!joinedPlayers.ContainsKey(previousJoinedPlayer))
+                //    {
+                //        joinedPlayers.Add(previousJoinedPlayer, previousJoinedPlayer);
+                //    }
+                //}
             }
 
             return joinedPlayers;
@@ -175,14 +214,23 @@ namespace MinecraftServerInfoBot
             return cleanList;
         }
 
-        public static string CreateNotificationMessage(List<string> loggedInPlayers)
+        public static string CreateNotificationMessage(Dictionary<string, bool> players)
         {
             var message = new StringBuilder();
-            message.AppendLine("----- ESTE ES UN MENSAJE DE PRUEBA -----");
-            message.AppendLine("Jugadores conectados: ");
-            foreach (var item in loggedInPlayers)
+            message.AppendLine("\t----- ¡Atenção chavalada! -----");
+            message.AppendLine("");
+            message.AppendLine("\tPeña conectada del server: ");
+            foreach (var item in players)
             {
-                message.AppendLine($"   {item}");
+                if(item.Value)
+                message.AppendLine($"\t   {item.Key}");
+            }
+            message.AppendLine("");
+            message.AppendLine("\tTraidores que se han desconectado: ");
+            foreach (var item in players)
+            {
+                if (!item.Value)
+                    message.AppendLine($"\t   {item.Key}");
             }
 
             return message.ToString();
